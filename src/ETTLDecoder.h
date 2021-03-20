@@ -9,6 +9,8 @@ namespace Take4
     class DecodeBuffer;
     namespace Esp32
     {
+        // ETTLデコーダークラス
+        // X, CLKピンの割り込みはgpio_isr_handler_addを使うのでbeginの前にgpio_install_isr_serviceの呼び出しが必要
         class ETTLDecoder
         {
         private:
@@ -26,26 +28,25 @@ namespace Take4
                 None,
                 NotDetectNextLatch,     // 次のラッチがされなかった
                 DetectPreFlash,         // プリフラッシュと認識されたCLKのパルス
-                DetectXFlash,           // X接点の同調フラッシュと認識されたパルス
                 DetectSleep,            // CLKがLOWのままなのでスリープとして認識された
                 DetectDeepSleep,        // Sleepからさらに時間経過したとして認識
             };
 
             // 以下2つはどのタイマーを使うかの指定
-            static const timer_idx_t timerIndex_ = TIMER_0;
             static const timer_group_t timerGroup_ = TIMER_GROUP_0;
+            static const timer_idx_t timerEventIndex_ = TIMER_0;
+            // X接点時間計測用タイマー
+            static const timer_idx_t elapseXIndex_ = TIMER_1;
 
             gpio_num_t clk_;
             gpio_num_t x_;
             gpio_num_t d1_;
             gpio_num_t d2_;
-            ClockActionFlag clkFlag_;
-            TimerActionFlag timerFlag_;
+            volatile ClockActionFlag clkFlag_;
+            volatile TimerActionFlag timerFlag_;
 
             DecodeBuffer& buffer_;
 
-            timeval prevTime_;
-            bool mesureXTime_;
             DebugPin& debug_;
 
             // タイマー割り込み関数
@@ -54,10 +55,15 @@ namespace Take4
             // タイマー割り込みから呼び出されるタイマー処理関する
             void timerAction();
 
-            // GPIO状態変化時の割り込み関数
-            static IRAM_ATTR void gpioIntr(void* user);
+            // Clkピンの割り込み処理
+            static IRAM_ATTR void clkPinIntr(void* user);
 
-            void pinAction();
+            void clkPinAction();
+
+            // Xピンの割り込み処理
+            static IRAM_ATTR void xPinIntr(void* user);
+
+            void xPinAction();
 
             void setTimer(TimerActionFlag flag);
 

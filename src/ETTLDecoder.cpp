@@ -19,10 +19,8 @@ ETTLDecoder::ETTLDecoder(gpio_num_t clk, gpio_num_t x, gpio_num_t d1, gpio_num_t
 , clkFlag_(ClockActionFlag::DeepSleep)
 , timerFlag_(TimerActionFlag::None)
 , buffer_(buffer)
-, mesureXTime_(false)
 , debug_(debug)
 {
-    prevTime_.tv_sec = prevTime_.tv_usec = 0;
 }
 
 ETTLDecoder::~ETTLDecoder()
@@ -31,18 +29,25 @@ ETTLDecoder::~ETTLDecoder()
 
 IRAM_ATTR void ETTLDecoder::timerIntr(void* user)
 {
-    ETTLDecoder* work = (ETTLDecoder*)user;
+    auto work = (ETTLDecoder*)user;
     work->timerAction();
 }
 
-IRAM_ATTR void ETTLDecoder::gpioIntr(void* user)
+IRAM_ATTR void ETTLDecoder::clkPinIntr(void* user)
 {
-    ETTLDecoder* work = (ETTLDecoder*)user;
-    work->pinAction();
+    auto work = (ETTLDecoder*)user;
+    work->clkPinAction();
+}
+
+IRAM_ATTR void ETTLDecoder::xPinIntr(void* user)
+{
+    auto work = (ETTLDecoder*)user;
+    work->xPinAction();
 }
 
 void ETTLDecoder::timerAction()
 {
+    timer_spinlock_take(timerGroup_);
     switch(timerFlag_) {
     case None:
         debug_.pulse(0, 1);
@@ -59,84 +64,80 @@ void ETTLDecoder::timerAction()
         setTimer(DetectSleep);
         break;
 
-    case DetectXFlash:
-        {
-            timezone tz;
-            gettimeofday(&prevTime_, &tz);
-            mesureXTime_ = true;
-            debug_.pulse(0, 3);
-        }
-        break;
-
     case DetectSleep:
         debug_.pulse(0, 4);
         clkFlag_ = Sleep;
+        gpio_intr_enable(x_);
         setTimer(DetectDeepSleep);
         break;
 
     case DetectDeepSleep:
         debug_.pulse(0, 5);
         clkFlag_ = DeepSleep;
+        setTimer(None);
+        break;
+    }
+    timer_group_clr_intr_status_in_isr(timerGroup_, timerEventIndex_);
+    timer_group_enable_alarm_in_isr(timerGroup_, timerEventIndex_);
+    timer_spinlock_give(timerGroup_);
+}
+
+void ETTLDecoder::clkPinAction()
+{
+    auto clkLevel = gpio_get_level(clk_);
+    switch (clkFlag_) {
+    case DeepSleep:
+    case Sleep:
+        if (clkLevel == 1) {
+            debug_.pulse(1, 4);
+            clkFlag_ = Active;
+            gpio_intr_disable(x_);
+            buffer_.resetLatch();
+        }
+        break;
+
+    case Active:
+        if (clkLevel == 0) {
+            debug_.pulse(2, 1);
+            clkFlag_ = Latch;
+            setTimer(DetectPreFlash);
+        }
+        break;
+
+    case Latch:
+        if (clkLevel == 1) {
+            debug_.pulse(1, 1);
+            setTimer(None);
+            buffer_.latch(gpio_get_level(d1_), gpio_get_level(d2_));
+            clkFlag_ = Active;
+        }
+        break;
+
+    case PreFlash:
+        if (clkLevel == 1) {
+            debug_.pulse(1, 2);
+            setTimer(None);
+            buffer_.preFlash();
+            clkFlag_ = Active;
+        }
         break;
     }
 }
 
-void ETTLDecoder::pinAction()
+void ETTLDecoder::xPinAction()
 {
-    if (mesureXTime_) {
-        if (gpio_get_level(x_) == 1) {
-            debug_.pulse(1, 6);
-            mesureXTime_ = false;
-            timezone tz;
-            timeval current;
-            gettimeofday(&current, &tz);
-            auto elapS = current.tv_sec - prevTime_.tv_sec;
-            buffer_.xFlash(elapS * 1000000 + current.tv_usec - prevTime_.tv_usec);
-        }
+    if (gpio_get_level(x_) == 0) {
+        debug_.pulse(1, 5);
+        // X接点計測開始
+        timer_set_counter_value(timerGroup_, elapseXIndex_, 0ULL);
+        timer_start(timerGroup_, elapseXIndex_);
     }
     else {
-        switch (clkFlag_) {
-        case DeepSleep:
-        case Sleep:
-            if (gpio_get_level(clk_) == 1) {
-                debug_.pulse(1, 4);
-                clkFlag_ = Active;
-                buffer_.resetLatch();
-            }
-            else if (gpio_get_level(x_) == 0) {
-                debug_.pulse(1, 5);
-                setTimer(DetectXFlash);
-            }
-            break;
-
-        case Active:
-            if (gpio_get_level(clk_) == 0) {
-                debug_.pulse(2, 1);
-                clkFlag_ = Latch;
-                setTimer(DetectPreFlash);
-            }
-            break;
-
-        case Latch:
-            if (gpio_get_level(clk_) == 1) {
-                debug_.pulse(1, 1);
-
-                setTimer(None);
-                buffer_.latch(gpio_get_level(d1_), gpio_get_level(d2_));
-                clkFlag_ = Active;
-            }
-            break;
-
-        case PreFlash:
-            if (gpio_get_level(clk_) == 1) {
-                debug_.pulse(1, 2);
-
-                setTimer(None);
-                buffer_.preFlash();
-                clkFlag_ = Active;
-            }
-            break;
-        }
+        // X接点経過時間計算
+        timer_pause(timerGroup_, elapseXIndex_);
+        uint64_t value;
+        timer_get_counter_value(timerGroup_, elapseXIndex_, &value);
+        buffer_.xFlash(value / secTimerScale_ / 1000);
     }
 }
 
@@ -148,20 +149,19 @@ bool ETTLDecoder::isDeepSleep() const
 void ETTLDecoder::setTimer(TimerActionFlag flag)
 {
     timerFlag_ = flag;
-    if (flag == None) {
-        timer_pause(timerGroup_, timerIndex_);
+    if (timerFlag_ == None) {
+        timer_pause(timerGroup_, timerEventIndex_);
+        timer_set_counter_value(timerGroup_, timerEventIndex_,
+            microTimerScale_);
     }
     else {
         uint64_t timer = 0;
-        switch(flag) {
+        switch(timerFlag_) {
         case NotDetectNextLatch:
             timer = 100;
             break;
         case DetectPreFlash:
             timer = 50;
-            break;
-        case DetectXFlash:
-            timer = 4000;
             break;
         case DetectSleep:
             timer = 1000;
@@ -172,11 +172,9 @@ void ETTLDecoder::setTimer(TimerActionFlag flag)
         default:
             return;
         }
-        timer_set_counter_value(timerGroup_, timerIndex_,
-            0x00000000ULL);
-        timer_set_alarm_value(timerGroup_, timerIndex_,
+        timer_set_counter_value(timerGroup_, timerEventIndex_,
             timer * microTimerScale_);
-        timer_start(timerGroup_, timerIndex_);
+        timer_start(timerGroup_, timerEventIndex_);
     }
 }
 
@@ -185,30 +183,46 @@ void ETTLDecoder::begin()
     buffer_.initialize();
 
     // タイマー割り込みの初期化
-    timer_config_t config = {
-        .alarm_en = TIMER_ALARM_EN,
-        .counter_en = TIMER_PAUSE,
-        .intr_type = TIMER_INTR_LEVEL,
-        .counter_dir = TIMER_COUNT_UP,
-        .auto_reload = TIMER_AUTORELOAD_DIS,
-        .divider = timerDvider_,
-    }; // default clock source is APB
-    timer_init(timerGroup_, timerIndex_, &config);
-    timer_isr_register(timerGroup_, timerIndex_,
-        ETTLDecoder::timerIntr,(void *) this, ESP_INTR_FLAG_IRAM, nullptr);
-    setTimer(None);
+    {
+        timer_config_t config = {
+            .alarm_en = TIMER_ALARM_EN,
+            .counter_en = TIMER_PAUSE,
+            .intr_type = TIMER_INTR_LEVEL,
+            .counter_dir = TIMER_COUNT_DOWN,
+            .auto_reload = TIMER_AUTORELOAD_DIS,
+            .divider = timerDvider_,
+        }; // default clock source is APB
+        timer_init(timerGroup_, timerEventIndex_, &config);
+        timer_isr_register(timerGroup_, timerEventIndex_,
+            ETTLDecoder::timerIntr, (void *)this, ESP_INTR_FLAG_IRAM, nullptr);
+        timer_set_alarm_value(timerGroup_, timerEventIndex_, 0ULL);
+        setTimer(None);
+    }
+    {
+        timer_config_t config = {
+            .alarm_en = TIMER_ALARM_DIS,
+            .counter_en = TIMER_PAUSE,
+            .intr_type = TIMER_INTR_LEVEL,
+            .counter_dir = TIMER_COUNT_UP,
+            .auto_reload = TIMER_AUTORELOAD_DIS,
+            .divider = timerDvider_,
+        }; // default clock source is APB
+        timer_init(timerGroup_, elapseXIndex_, &config);
+    }
 
     gpio_config_t io_conf = {
         .pin_bit_mask = 1ULL << clk_ | 1ULL << x_ | 1ULL << d1_ | 1ULL << d2_,
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,
         .intr_type = GPIO_INTR_DISABLE
     };
     gpio_config(&io_conf);
-    gpio_isr_register(ETTLDecoder::gpioIntr, (void*) this, ESP_INTR_FLAG_IRAM, nullptr);
     gpio_set_intr_type(clk_, GPIO_INTR_ANYEDGE);
-    gpio_intr_enable(clk_);
     gpio_set_intr_type(x_, GPIO_INTR_ANYEDGE);
-    gpio_intr_enable(x_);
+
+    gpio_isr_handler_add(clk_, ETTLDecoder::clkPinIntr, (void*)this);
+    gpio_isr_handler_add(x_, ETTLDecoder::xPinIntr, (void*)this);
+    // gpio_intr_enable(x_);
+    gpio_intr_enable(clk_);
 }
