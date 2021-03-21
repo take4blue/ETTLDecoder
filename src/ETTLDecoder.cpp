@@ -121,6 +121,7 @@ IRAM_ATTR void ETTLDecoder::clkPinAction()
         debug_.pulse(1, 3);
         clkFlag_ = Latch;
         buffer_.resetLatch();
+        setTimer(None);
         gpio_intr_disable(x_);
     }
 }
@@ -196,6 +197,7 @@ void ETTLDecoder::begin()
         timer_isr_register(timerGroup_, timerEventIndex_,
             ETTLDecoder::timerIntr, (void *)this, ESP_INTR_FLAG_IRAM, nullptr);
         timer_set_alarm_value(timerGroup_, timerEventIndex_, 0ULL);
+        setTimer(NotDetectNextLatch);   // 一度タイマー動かしておかないと、初回のラッチ処理でDelayが発生するためここで動かしておく
         setTimer(None);
     }
     {
