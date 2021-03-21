@@ -18,7 +18,7 @@ DecodeBuffer::~DecodeBuffer()
     // gpio_isr_handler_remove(pin());
 }
 
-void DecodeBuffer::xFlash(long time)
+void DecodeBuffer::xFlash(uint64_t time)
 {
     xFlashPostion_ = nPos_;
     xFlashTime_ = time;
@@ -47,7 +47,7 @@ void DecodeBuffer::printData()
             printf("PreFlash = %d\n", preFlashPosition_);
         }
         if (xFlashTime_ > 0) {
-            printf("XFlash = %d - %ld\n", xFlashPostion_, xFlashTime_);
+            printf("XFlash = %d - %llu\n", xFlashPostion_, xFlashTime_);
         }
         nPos_ = 0;
         nLatch_ = 0;

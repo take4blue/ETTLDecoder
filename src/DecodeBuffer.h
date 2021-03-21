@@ -15,7 +15,7 @@ namespace Take4
 
         size_t preFlashPosition_;
         size_t xFlashPostion_;
-        long xFlashTime_;
+        uint64_t xFlashTime_;
 
     public:
         DecodeBuffer();
@@ -23,7 +23,7 @@ namespace Take4
         ~DecodeBuffer();
 
         // X接点の同期時間を設定する
-        void xFlash(long time);
+        void xFlash(uint64_t time);
 
         // バッファのデータを出力する
         void printData();

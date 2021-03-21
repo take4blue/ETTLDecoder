@@ -56,9 +56,11 @@ IRAM_ATTR void ETTLDecoder::timerAction()
     case NotDetectNextLatch:
         debug_.pulse(0, 1);
         buffer_.resetLatch();
+        setTimer(DetectSleep);
         break;
 
     case DetectPreFlash:
+        // 今現在この処理にはこない
         debug_.pulse(0, 2);
         clkFlag_ = PreFlash;
         setTimer(DetectSleep);
@@ -66,10 +68,16 @@ IRAM_ATTR void ETTLDecoder::timerAction()
 
     case DetectSleep:
         debug_.pulse(0, 3);
-        clkFlag_ = Sleep;
-        gpio_set_intr_type(clk_, GPIO_INTR_NEGEDGE);
-        gpio_intr_enable(x_);
-        setTimer(DetectDeepSleep);
+        if (gpio_get_level(clk_) == 0) {
+            // ClkがLowならスリープかつX同調検知
+            clkFlag_ = Sleep;
+            setTimer(DetectDeepSleep);
+            gpio_intr_enable(x_);
+        }
+        else {
+            // ClkがHighならLatch継続状態
+            setTimer(DetectSleep);
+        }
         break;
 
     case DetectDeepSleep:
@@ -85,42 +93,35 @@ IRAM_ATTR void ETTLDecoder::timerAction()
 
 IRAM_ATTR void ETTLDecoder::clkPinAction()
 {
-    auto clkLevel = gpio_get_level(clk_);
-    if (clkLevel == 1) {
-        if (clkFlag_ == Latch) {
-            debug_.pulse(1, 1);
-            setTimer(None);
-            if (buffer_.latch(gpio_get_level(d1_), gpio_get_level(d2_))) {
-                // 1バイト取り込んだので、次の1ビット待ちにするため、CLKピンを立下りのみ検知に変更
-                gpio_set_intr_type(clk_, GPIO_INTR_NEGEDGE);
-                clkFlag_ = Active;
-            }
+    if (clkFlag_ == Latch) {
+        debug_.pulse(1, 1);
+        if (!buffer_.latch(gpio_get_level(d1_), gpio_get_level(d2_))) {
+            // ラッチ途中なら、ラッチタイムアウト検出処理を入れておく
+            setTimer(NotDetectNextLatch);
         }
-        else if (clkFlag_ == PreFlash) {
-            // 一定時間経過したCLK立上りなのでプリフラッシュとして認識
-            // 次のバイトデータの取り込み待ちにするため、CLKピンを立下りのみ検知に変更
-            debug_.pulse(1, 2);
-            setTimer(None);
-            buffer_.preFlash();
-            gpio_set_intr_type(clk_, GPIO_INTR_NEGEDGE);
-            clkFlag_ = Active;
-        }
-        else if (clkFlag_ == DeepSleep || clkFlag_ == Sleep) {
-            // スリープからの復帰
-            // Xピンの割り込みを外す
-            // CLKピンは立下りのみ検知に変更
-            debug_.pulse(1, 3);
-            clkFlag_ = Active;
-            gpio_intr_disable(x_);
-            gpio_set_intr_type(clk_, GPIO_INTR_NEGEDGE);
-            buffer_.resetLatch();
+        else {
+            // 1バイト受信後はClk立下りのスリープ検知
+            setTimer(DetectSleep);
         }
     }
-    else if (clkFlag_ == Active) {
-        debug_.pulse(2, 1);
+    else if (clkFlag_ == PreFlash) {
+        // 今現在、この処理には来ない
+
+        // 一定時間経過したCLK立上りなのでプリフラッシュとして認識
+        // 次のバイトデータの取り込み待ちにするため、CLKピンを立下りのみ検知に変更
+        debug_.pulse(1, 2);
+        setTimer(None);
+        buffer_.preFlash();
+        clkFlag_ = Active;
+    }
+    else if (clkFlag_ == DeepSleep || clkFlag_ == Sleep) {
+        // スリープからの復帰
+        // Xピンの割り込みを外す
+        // CLKピンは立下りのみ検知に変更
+        debug_.pulse(1, 3);
         clkFlag_ = Latch;
-        gpio_set_intr_type(clk_, GPIO_INTR_POSEDGE);
-        setTimer(DetectPreFlash);
+        buffer_.resetLatch();
+        gpio_intr_disable(x_);
     }
 }
 
@@ -133,12 +134,12 @@ void ETTLDecoder::xPinAction()
         timer_start(timerGroup_, elapseXIndex_);
     }
     else {
-        debug_.pulse(3, 2);
         // X接点経過時間計算
         timer_pause(timerGroup_, elapseXIndex_);
+        debug_.pulse(3, 2);
         uint64_t value;
         timer_get_counter_value(timerGroup_, elapseXIndex_, &value);
-        buffer_.xFlash(value / secTimerScale_ / 1000);
+        buffer_.xFlash(value / microTimerScale_);
     }
 }
 
@@ -147,7 +148,7 @@ bool ETTLDecoder::isDeepSleep() const
     return clkFlag_ == DeepSleep;
 }
 
-void ETTLDecoder::setTimer(TimerActionFlag flag)
+IRAM_ATTR void ETTLDecoder::setTimer(TimerActionFlag flag)
 {
     timerFlag_ = flag;
     if (timerFlag_ == None) {
@@ -222,8 +223,9 @@ void ETTLDecoder::begin()
 
     gpio_isr_handler_add(clk_, ETTLDecoder::clkPinIntr, (void*)this);
     gpio_isr_handler_add(x_, ETTLDecoder::xPinIntr, (void*)this);
-    // gpio_intr_enable(x_);
     gpio_intr_enable(clk_);
+    // gpio_intr_enable(x_);
+    gpio_pulldown_dis(x_);
 }
 
 void ETTLDecoder::end()
