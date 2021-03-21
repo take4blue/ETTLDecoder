@@ -42,8 +42,8 @@ namespace Take4
             gpio_num_t x_;
             gpio_num_t d1_;
             gpio_num_t d2_;
-            volatile ClockActionFlag clkFlag_;
-            volatile TimerActionFlag timerFlag_;
+            ClockActionFlag clkFlag_;
+            TimerActionFlag timerFlag_;
 
             DecodeBuffer& buffer_;
 
@@ -74,6 +74,8 @@ namespace Take4
             ~ETTLDecoder();
 
             void begin();
+
+            void end();
 
             bool isDeepSleep() const;
         };
