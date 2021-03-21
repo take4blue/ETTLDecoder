@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "DecodeBuffer.h"
+#include <esp_attr.h>
 
 using namespace Take4;
 
@@ -69,13 +70,17 @@ void DecodeBuffer::fixData()
 }
 
 // D1, D2ピンのラッチとシフト処理
-void DecodeBuffer::latch(int d1, int d2)
+IRAM_ATTR bool DecodeBuffer::latch(int d1, int d2)
 {
     work_[0] = (work_[0] << 1) | (d1 & 0x1);
     work_[1] = (work_[1] << 1) | (d2 & 0x1);
     nLatch_++;
     if (nLatch_ >= 8) {
         fixData();
+        return true;
+    }
+    else {
+        return false;
     }
 }
 

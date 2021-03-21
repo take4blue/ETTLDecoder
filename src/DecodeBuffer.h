@@ -20,7 +20,7 @@ namespace Take4
     public:
         DecodeBuffer();
 
-        virtual ~DecodeBuffer();
+        ~DecodeBuffer();
 
         // X接点の同期時間を設定する
         void xFlash(long time);
@@ -35,12 +35,13 @@ namespace Take4
         void initialize();
 
         // d1, d2をラッチしてバイトデータを作成する
-        void latch(int d1, int d2);
+        // returnがtrueの場合、8ビット目のラッチ(つまりデータ確定)を示す
+        bool latch(int d1, int d2);
 
         // ラッチの状態情報をいったんクリアする
         void resetLatch();
 
         // ラッチ中のデータを確定しバッファに詰め込む
         void fixData();
-};
+    };
 }
