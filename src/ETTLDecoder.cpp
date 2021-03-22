@@ -103,6 +103,7 @@ IRAM_ATTR void ETTLDecoder::clkPinAction()
             // 1バイト受信後はClk立下りのスリープ検知
             setTimer(DetectSleep);
         }
+        gpio_intr_disable(x_);
     }
     else if (clkFlag_ == PreFlash) {
         // 今現在、この処理には来ない
@@ -122,7 +123,6 @@ IRAM_ATTR void ETTLDecoder::clkPinAction()
         clkFlag_ = Latch;
         buffer_.resetLatch();
         setTimer(None);
-        gpio_intr_disable(x_);
     }
 }
 
@@ -141,6 +141,7 @@ void ETTLDecoder::xPinAction()
         uint64_t value;
         timer_get_counter_value(timerGroup_, elapseXIndex_, &value);
         buffer_.xFlash(value / microTimerScale_);
+        gpio_intr_disable(x_);
     }
 }
 
