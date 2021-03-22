@@ -50,18 +50,18 @@ namespace Take4
             DebugPin& debug_;
 
             // タイマー割り込み関数
-            static IRAM_ATTR void timerIntr(void* user);
+            static void timerIntr(void* user);
 
             // タイマー割り込みから呼び出されるタイマー処理関する
             void timerAction();
 
             // Clkピンの割り込み処理
-            static IRAM_ATTR void clkPinIntr(void* user);
+            static void clkPinIntr(void* user);
 
             void clkPinAction();
 
             // Xピンの割り込み処理
-            static IRAM_ATTR void xPinIntr(void* user);
+            static void xPinIntr(void* user);
 
             void xPinAction();
 
