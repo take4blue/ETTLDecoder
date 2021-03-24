@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string>
 #include "DecodeBuffer.h"
 #include <esp_attr.h>
 
@@ -40,14 +41,42 @@ void DecodeBuffer::initialize()
 void DecodeBuffer::printData()
 {
     if (nPos_ > 0) {
+        std::string d1Buffer;
+        bool isBFlag = false;
+
         for (size_t i = 0; i < nPos_; i++) {
-            printf("%4d %02x %02x\n", i, buffer_[i][0], buffer_[i][1]);
-        }
-        if (preFlashPosition_ > 0) {
-            printf("PreFlash = %d\n", preFlashPosition_);
-        }
-        if (xFlashTime_ > 0) {
-            printf("XFlash = %d - %llu\n", xFlashPostion_, xFlashTime_);
+            if ((buffer_[i][0] == 0xff || buffer_[i][0] == 0x8e) && buffer_[i][1] == 0xff) {
+                if (!d1Buffer.empty()) {
+                    printf("\n           %s\n", d1Buffer.c_str());
+                    d1Buffer.clear();
+                }
+                // ブロックデータの開始なので改行に変更する
+                printf("%4d\n", i);
+                isBFlag = false;
+            }
+            else if ((buffer_[i][1] & 0xF0) == 0xb0) {
+                if (!d1Buffer.empty()) {
+                    printf("\n           %s\n", d1Buffer.c_str());
+                    d1Buffer.clear();
+                }
+                printf("%4d,%02x,%02x ", i, buffer_[i][0], buffer_[i][1]);
+                isBFlag = true;
+            }
+            else if (isBFlag) {
+                char work[10];
+                sprintf(work, ",%02x", buffer_[i][0]);
+                d1Buffer.append(work);
+                printf(",%02x", buffer_[i][1]);
+            }
+            else {
+                printf("%4d %02x %02x\n", i, buffer_[i][0], buffer_[i][1]);
+            }
+            if (xFlashTime_ > 0 && i == xFlashPostion_) {
+                printf("XFlash = %llu\n", xFlashTime_);
+            }
+            if (preFlashPosition_ > 0 && i == preFlashPosition_) {
+                printf("PreFlash\n");
+            }
         }
         nPos_ = 0;
         nLatch_ = 0;
@@ -61,6 +90,9 @@ void DecodeBuffer::printData()
 void DecodeBuffer::fixData()
 {
     if (nLatch_ > 0) {
+        if (nPos_ >= BufferSize_) {
+            nPos_ = 0;
+        }
         buffer_[nPos_][0] = work_[0];
         buffer_[nPos_][1] = work_[1];
         work_[0] = work_[1] = 0;
@@ -88,4 +120,14 @@ void DecodeBuffer::resetLatch()
 {
     work_[0] = work_[1] = 0;
     nLatch_ = 0;
+}
+
+uint8_t DecodeBuffer::lastData(size_t n) const
+{
+    if (nPos_ > 0 && n < 2) {
+        return buffer_[nPos_ - 1][n];
+    }
+    else {
+        return 0;
+    }
 }

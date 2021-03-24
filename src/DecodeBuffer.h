@@ -43,5 +43,9 @@ namespace Take4
 
         // ラッチ中のデータを確定しバッファに詰め込む
         void fixData();
+
+        // 最後に受け取ったデータを取得する
+        // 0 <= n <= 1
+        uint8_t lastData(size_t n) const;
     };
 }
