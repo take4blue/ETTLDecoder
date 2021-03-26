@@ -47,5 +47,13 @@ namespace Take4
         // 最後に受け取ったデータを取得する
         // 0 <= n <= 1
         uint8_t lastData(size_t n) const;
+
+        size_t nPos() const;
+
+        uint8_t data(size_t pos, bool isD1) const;
+
+        size_t xPos() const;
+
+        uint64_t xTime() const;
     };
 }

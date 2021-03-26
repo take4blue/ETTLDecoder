@@ -131,3 +131,26 @@ uint8_t DecodeBuffer::lastData(size_t n) const
         return 0;
     }
 }
+
+size_t DecodeBuffer::nPos() const
+{
+    return nPos_;
+}
+
+uint8_t DecodeBuffer::data(size_t pos, bool isD1) const
+{
+    if (pos < nPos_) {
+        return buffer_[pos][isD1 ? 0 : 1];
+    }
+    return 0;
+}
+
+size_t DecodeBuffer::xPos() const
+{
+    return xFlashPostion_;
+}
+
+uint64_t DecodeBuffer::xTime() const
+{
+    return xFlashTime_;
+}

@@ -3,6 +3,7 @@
 #include "DebugPin.h"
 #include "DecodeBuffer.h"
 #include "ETTLDecoder.h"
+#include "BufferFormatter.h"
 
 const gpio_num_t PIN_X = GPIO_NUM_32;
 const gpio_num_t PIN_CLK = GPIO_NUM_33;
@@ -15,12 +16,15 @@ Take4::Esp32::ETTLDecoder decoder(PIN_CLK, PIN_X, PIN_D1, PIN_D2, buffer, debugP
 
 extern "C" void app_main()
 {
+    Take4::BufferFormatter formatter;
+
     gpio_install_isr_service(ESP_INTR_FLAG_LEVEL3);
     debugPin.begin();
     decoder.begin();
     for(;;) {
         if (decoder.isDeepSleep()) {
-            buffer.printData();
+            formatter.process(buffer);
+            buffer.initialize();
         }
     }
     decoder.end();
