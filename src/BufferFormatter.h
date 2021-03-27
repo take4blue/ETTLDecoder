@@ -14,7 +14,7 @@ namespace Take4
         size_t xPos_;
         uint64_t xTime_;
 
-        void compareAndOutput(const BlockData& data);
+        void compareAndOutput(size_t pos, const BlockData& data);
 
         void outputSameValue(bool outputLf = false);
 

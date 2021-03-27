@@ -58,12 +58,12 @@ void BlockData::print() const
             BlockData::add(buffer, val);
         }
     );
-    printf("%5d%s\n", no_, buffer.c_str());
+    printf("%3d%s\n", no_, buffer.c_str());
     buffer.clear();
     std::for_each(d2_.begin(), d2_.end(),
         [&](uint8_t val) {
             BlockData::add(buffer, val);
         }
     );
-    printf("     %s\n", buffer.c_str());
+    printf("   %s\n", buffer.c_str());
 }

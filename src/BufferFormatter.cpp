@@ -7,8 +7,8 @@ using namespace Take4;
 void BufferFormatter::outputSameValue(bool outputLf)
 {
     if (!sameValue_.empty()) {
-        printf("%5d-%5d", sameValue_[0], sameValue_[1]);
-        std::for_each(sameValue_.begin() + 2, sameValue_.end(), [](size_t value) { printf(",%5d", value);});
+        printf("   -%3d", sameValue_[1]);
+        std::for_each(sameValue_.begin() + 2, sameValue_.end(), [](size_t value) { printf(",%3d", value);});
         puts("");
         sameValue_.clear();
     }
@@ -17,11 +17,13 @@ void BufferFormatter::outputSameValue(bool outputLf)
     }
 }
 
-void BufferFormatter::compareAndOutput(const BlockData& work)
+void BufferFormatter::compareAndOutput(size_t pos, const BlockData& work)
 {
-    if (xPos_ > 0 && work.no() >= xPos_) {
-        outputSameValue();
-        printf("Xflush,%d,%lld\n\n", xPos_, xTime_);
+    if (xPos_ > 0 && pos >= xPos_) {
+        if (xTime_ > 0) {
+            outputSameValue();
+            printf("Xflush,%lld\n\n", xTime_);
+        }
         xPos_ = 0;
     }
     if (work.no() != 0) {
@@ -39,6 +41,7 @@ void BufferFormatter::compareAndOutput(const BlockData& work)
             outputSameValue();
             work.print();
             bdatas_.push_back(work);
+            lastNo_++;
         }
     }
 }
@@ -50,20 +53,21 @@ void BufferFormatter::process(const DecodeBuffer& data)
         BlockData work(0);
 
         xTime_ = data.xTime();
-        xPos_ = data.xPos() + lastNo_;
+        xPos_ = data.xPos();
 
         for (size_t i = 0; i < data.nPos(); i++) {
             if ((data.data(i, true) == 0xff || data.data(i, true) == 0x8e) && data.data(i, false) == 0xff) {
                 // ここまでのデータの比較及び出力
-                compareAndOutput(work);
+                compareAndOutput(i, work);
                 outputSameValue(true);
                 work = BlockData(0);
                 isBflag = false;
             }
-            else if ((data.data(i, false) & 0xF0) == 0xB0) {
-                compareAndOutput(work);
+            else if ((data.data(i, false) & 0xF0) == 0xB0 || 
+                    (data.data(i, true) == 0x8e && (data.data(i, false) & 0xF0) >= 0xA0)) {
+                compareAndOutput(i, work);
                 // ここまでのデータの比較及び出力
-                work = BlockData(i + lastNo_);
+                work = BlockData(lastNo_);
                 isBflag = true;
                 work.push_back(data.data(i, true), data.data(i, false));
             }
@@ -72,8 +76,7 @@ void BufferFormatter::process(const DecodeBuffer& data)
             }
         }
         // ここまでのデータの比較及び出力
-        compareAndOutput(work);
-        lastNo_ += data.nPos() + 1;
+        compareAndOutput(data.nPos(), work);
     }
 }
 
@@ -86,7 +89,7 @@ void BufferFormatter::clear()
     xTime_ = 0;
 }
 
-BufferFormatter::BufferFormatter() : bdatas_(), lastNo_(0), sameValue_(), xPos_(0), xTime_(0)
+BufferFormatter::BufferFormatter() : bdatas_(), lastNo_(1), sameValue_(), xPos_(0), xTime_(0)
 {
 }
 
