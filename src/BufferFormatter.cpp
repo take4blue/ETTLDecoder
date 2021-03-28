@@ -4,15 +4,32 @@
 
 using namespace Take4;
 
+template <typename ... Args>
+std::string format(const std::string& fmt, Args ... args)
+{
+    size_t len = std::snprintf(nullptr, 0, fmt.c_str(), args ...);
+    std::vector<char> buf(len + 1);
+    std::snprintf(&buf[0], len + 1, fmt.c_str(), args ...);
+    return std::string(&buf[0], &buf[0] + len);
+}
+
 void BufferFormatter::outputSameValue(bool outputLf)
 {
     if (!sameValue_.empty()) {
-        printf("   -%3d", sameValue_[1]);
-        std::for_each(sameValue_.begin() + 2, sameValue_.end(), [](size_t value) { printf(",%3d", value);});
-        puts("");
+        auto line = format("   -%3d", sameValue_[1]);
+        std::for_each(sameValue_.begin() + 2, sameValue_.end(),
+            [&](size_t value) {
+                line += format(",%3d", value);
+            }
+        );
+        if (line != prevLine_) {
+            prevLine_ = line;
+            puts(line.c_str());
+        }
         sameValue_.clear();
     }
     else if (outputLf) {
+        prevLine_.clear();
         puts("");
     }
 }
@@ -89,7 +106,7 @@ void BufferFormatter::clear()
     xTime_ = 0;
 }
 
-BufferFormatter::BufferFormatter() : bdatas_(), lastNo_(1), sameValue_(), xPos_(0), xTime_(0)
+BufferFormatter::BufferFormatter() : bdatas_(), lastNo_(1), sameValue_(), xPos_(0), xTime_(0), prevLine_()
 {
 }
 

@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <vector>
 #include "BlockData.h"
+#include <string>
 
 namespace Take4
 {
@@ -13,6 +14,7 @@ namespace Take4
         std::vector<size_t> sameValue_;
         size_t xPos_;
         uint64_t xTime_;
+        std::string prevLine_;
 
         void compareAndOutput(size_t pos, const BlockData& data);
 
