@@ -7,3 +7,4 @@
 sdkconfig.old
 */README
 platformio-device-monitor-*
+.vscode/settings.json
